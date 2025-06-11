@@ -7,28 +7,45 @@ use Illuminate\Http\Request;
 
 class AdminController extends Controller
 {
-    public function dashboard()
+    public function dashboard($sort = 'asc')
     {
-        $users = User::where('role', 'user')->get();
-        return view('admin.adminspage', compact('users'));
-    }
+        $users = User::orderBy('name', $sort)->get();
+        
+        // Get counts by role
+        $userCounts = User::selectRaw('role, count(*) as count')
+            ->groupBy('role')
+            ->pluck('count', 'role')
+            ->toArray();
 
-    public function deleteUser($id)
-    {
-        User::findOrFail($id)->delete();
-        return back()->with('success', 'User deleted');
+        return view('admin.dashboard', [
+            'users' => $users,
+            'currentSort' => $sort,
+            'adminCount' => $userCounts['admin'] ?? 0,
+            'userCount' => $userCounts['user'] ?? 0
+        ]);
     }
 
     public function updateUserName(Request $request, $id)
     {
-        $validated = $request->validate([
-            'name' => 'required|string|max:255'
-        ]);
-
         $user = User::findOrFail($id);
-        $user->update(['name' => $validated['name']]);
+        $user->name = $request->name;
+        $user->save();
 
-        return back()->with('success', 'User name updated successfully');
+        return response()->json([
+            'success' => true,
+            'message' => 'User name updated successfully'
+        ]);
+    }
+
+    public function deleteUser($id)
+    {
+        $user = User::findOrFail($id);
+        $user->delete();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'User deleted successfully'
+        ]);
     }
 
     public function index()

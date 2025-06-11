@@ -34,36 +34,45 @@ class UserController extends Controller
     /**
      * Search for users by name.
      */
-    public function searchUsers(Request $request): JsonResponse
+    public function search(Request $request): JsonResponse
     {
         try {
             $term = $request->get('term');
+            $currentUserId = Auth::id();
             
-            if (empty($term)) {
-                return response()->json([
-                    'success' => true,
-                    'data' => []
-                ]);
-            }
+            Log::info('Search started', [
+                'term' => $term,
+                'userId' => $currentUserId
+            ]);
 
-            $users = DB::table('users')
+            // Simplified search query
+            $users = User::where('id', '!=', $currentUserId)
                 ->where('name', 'LIKE', "%{$term}%")
-                ->where('id', '!=', Auth::id())
-                ->where('role', '!=', 'admin')
                 ->select('id', 'name')
-                ->limit(10)
                 ->get();
+            
+            Log::info('Search results', [
+                'count' => $users->count(),
+                'results' => $users->toArray()
+            ]);
 
+            // Simplify response
             return response()->json([
                 'success' => true,
-                'data' => $users
+                'data' => $users->map(function($user) {
+                    return [
+                        'id' => $user->id,
+                        'name' => $user->name,
+                        'status' => 'none'  // Default status
+                    ];
+                })
             ]);
 
         } catch (\Exception $e) {
             Log::error('Search error: ' . $e->getMessage());
             return response()->json([
                 'success' => false,
-                'message' => 'Error searching users'
+                'message' => 'Search failed'
             ], 500);
         }
     }
@@ -152,5 +161,42 @@ class UserController extends Controller
         ]);
 
         return back()->with('success', 'Password updated successfully');
+    }
+
+    /**
+     * Get all current friends with their details.
+     */
+    public function getFriends(): JsonResponse
+    {
+        $currentUserId = Auth::id();
+        
+        $friends = DB::table('users')
+            ->select('users.id', 'users.name', 'users.streak')
+            ->join('friendships', 'users.id', '=', 'friendships.friend_id')
+            ->where('friendships.user_id', '=', $currentUserId)
+            ->get();
+
+        return response()->json([
+            'status' => 'success',
+            'data' => $friends
+        ]);
+    }
+
+    /**
+     * Remove a friend from the user's friend list.
+     */
+    public function removeFriend($friendId): JsonResponse
+    {
+        $currentUserId = Auth::id();
+        
+        DB::table('friendships')
+            ->where('user_id', $currentUserId)
+            ->where('friend_id', $friendId)
+            ->delete();
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Friend removed successfully'
+        ]);
     }
 }

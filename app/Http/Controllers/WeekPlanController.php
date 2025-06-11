@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\WorkoutLock;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -42,19 +43,35 @@ class WeekPlanController extends Controller
         return response()->json(['success' => true]);
     }
 
-    public function lock()
+    public function lock(Request $request)
     {
         $userId = Auth::id();
-        
-        DB::table('workout_schedules')
-            ->where('user_id', $userId)
-            ->update([
-                'is_locked' => true,
-                'locked_at' => now(),
-                'updated_at' => now()
-            ]);
+        $days = $request->only(['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']);
+        $lockedDays = $request->input('locked_days', []);
 
-        return response()->json(['success' => true]);
+        $workoutLock = WorkoutLock::updateOrCreate(
+            ['user_id' => $userId],
+            [
+                'schedule' => $days,
+                'locked_days' => $lockedDays,
+            ]
+        );
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Workout schedule locked successfully'
+        ]);
+    }
+
+    public function getLockedDays()
+    {
+        $userId = Auth::id();
+        $workoutLock = WorkoutLock::where('user_id', $userId)->first();
+        
+        return response()->json([
+            'success' => true,
+            'locked_days' => $workoutLock ? $workoutLock->locked_days : []
+        ]);
     }
 
     public function getCurrentDayWorkout()

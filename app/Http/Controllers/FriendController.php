@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\User;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Http\Request;
 
 class FriendController extends Controller
@@ -17,23 +18,36 @@ class FriendController extends Controller
     public function search(Request $request)
     {
         if ($request->ajax()) {
-            $query = $request->input('query');
-            $currentUserId = Auth::id();
-            
-            $users = DB::table('users')
-                ->where('name', 'like', "%{$query}%")
-                ->where('id', '!=', $currentUserId)
-                ->where('role', '!=', 'admin')
-                ->whereNotExists(function ($query) use ($currentUserId) {
-                    $query->select(DB::raw(1))
-                        ->from('friendships')
-                        ->whereRaw('friendships.friend_id = users.id')
-                        ->where('friendships.user_id', $currentUserId);
-                })
-                ->take(5)
-                ->get(['id', 'name']);
+            try {
+                $query = $request->input('query');
+                $currentUserId = Auth::id();
                 
-            return response()->json($users);
+                $users = DB::table('users')
+                    ->select('id', 'name', 'email')
+                    ->where('name', 'like', "%{$query}%")
+                    ->where('id', '!=', $currentUserId)
+                    ->where('role', '!=', 'admin')
+                    ->whereNotExists(function ($query) use ($currentUserId) {
+                        $query->select(DB::raw(1))
+                            ->from('friendships')
+                            ->whereRaw('friendships.friend_id = users.id')
+                            ->where('friendships.user_id', $currentUserId);
+                    })
+                    ->take(5)
+                    ->get();
+
+                return response()->json([
+                    'status' => 'success',
+                    'data' => $users,
+                    'count' => $users->count()
+                ]);
+            } catch (\Exception $e) {
+                Log::error('Search error: ' . $e->getMessage());
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Error searching for users'
+                ], 500);
+            }
         }
 
         return view('friends.search');
@@ -116,18 +130,21 @@ class FriendController extends Controller
             $friends = DB::table('friendships')
                 ->join('users', 'users.id', '=', 'friendships.friend_id')
                 ->where('friendships.user_id', $userId)
-                ->select('users.id', 'users.name', 'users.streak')
+                ->select('users.id', 'users.name', 'users.email', 'users.created_at')
+                ->orderBy('users.name', 'asc')
                 ->get();
 
             return response()->json([
                 'status' => 'success',
-                'data' => $friends
+                'data' => $friends,
+                'count' => $friends->count()
             ]);
         } catch (\Exception $e) {
+            Log::error('Friend list error: ' . $e->getMessage());
             return response()->json([
                 'status' => 'error',
-                'message' => 'Could not load friends'
-            ]);
+                'message' => 'Could not load friends list'
+            ], 500);
         }
     }
 

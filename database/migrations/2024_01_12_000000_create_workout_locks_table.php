@@ -4,20 +4,21 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-return new class extends Migration
+class CreateWorkoutLocksTable extends Migration
 {
     public function up()
     {
-        Schema::create('friends', function (Blueprint $table) {
+        Schema::create('workout_locks', function (Blueprint $table) {
             $table->id();
             $table->foreignId('user_id')->constrained()->onDelete('cascade');
-            $table->foreignId('friend_id')->constrained('users')->onDelete('cascade');
+            $table->json('schedule')->nullable();
+            $table->json('locked_days')->nullable();
             $table->timestamps();
         });
     }
 
     public function down()
     {
-        Schema::dropIfExists('friends');
+        Schema::dropIfExists('workout_locks');
     }
-};
+}

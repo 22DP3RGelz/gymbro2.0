@@ -38,18 +38,19 @@
     display: flex;
     gap: 2rem;
     align-items: stretch;
-    max-width: 800px;  /* Adjusted width since we removed friends box */
+    max-width: 800px;
     margin: 0 auto;
 }
 
 .days-container {
     flex: 1;
-    background: var(--secondary-gray);
+    background: var(--surface);
     padding: 2rem;
-    border-radius: 8px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    border-radius: 1rem;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
     display: flex;
     flex-direction: column;
+    border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .days-column {
@@ -59,21 +60,92 @@
 }
 
 .day-box {
-    background: var(--primary-gray);
+    background: var(--surface-light);
     padding: 1.5rem;
-    border-radius: 8px;
+    border-radius: 0.75rem;
+    text-align: center;
     transition: all 0.3s ease;
+    border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .day-box:hover {
-    transform: translateX(10px);
-    box-shadow: -4px 4px rgba(0,0,0,0.1);
+    transform: translateY(-3px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    background: var(--surface);
+    border-color: rgba(255, 255, 255, 0.2);
+}
+
+.day-box.selected {
+    border-color: var(--primary);
+    background: rgba(99, 102, 241, 0.1);
+}
+
+.day-box.locked {
+    opacity: 0.8;
+    cursor: not-allowed;
+}
+
+.day-title {
+    font-size: 1.4rem;
+    font-weight: 600;
+    margin-bottom: 15px;
+    color: var(--primary);
+}
+
+.form-check-input {
+    width: 25px;
+    height: 25px;
+    margin-right: 10px;
+    cursor: pointer;
+    border: 2px solid var(--primary);
+    border-radius: 6px;
+    background: var(--surface-light);
+}
+
+.form-check-input:checked {
+    background-color: var(--primary);
+    border-color: var(--primary);
+}
+
+.form-check-label {
+    font-size: 1.1rem;
+    padding-top: 3px;
+    cursor: pointer;
+    color: var(--text);
+}
+
+.form-check {
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .lock-button {
     margin-top: 2rem;
     align-self: center;
     min-width: 200px;
+    padding: 0.75rem 1.5rem;
+    font-size: 1rem;
+    font-weight: 600;
+    background: var(--primary);
+    color: white;
+    border: none;
+    border-radius: 0.5rem;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.lock-button:hover {
+    background: var(--primary-dark);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 6px -1px rgba(99, 102, 241, 0.2);
+}
+
+.lock-button:disabled {
+    background: rgba(99, 102, 241, 0.5);
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
 }
 </style>
 
