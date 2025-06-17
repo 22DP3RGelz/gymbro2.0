@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\User;
+use App\Models\FriendRequest;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -33,6 +34,13 @@ class FriendController extends Controller
                             ->whereRaw('friendships.friend_id = users.id')
                             ->where('friendships.user_id', $currentUserId);
                     })
+                    ->whereNotExists(function ($query) use ($currentUserId) {
+                        $query->select(DB::raw(1))
+                            ->from('friend_requests')
+                            ->whereRaw('friend_requests.receiver_id = users.id')
+                            ->where('friend_requests.sender_id', $currentUserId)
+                            ->where('friend_requests.status', 'pending');
+                    })
                     ->take(5)
                     ->get();
 
@@ -53,7 +61,7 @@ class FriendController extends Controller
         return view('friends.search');
     }
 
-    public function addFriend(Request $request)
+    public function sendRequest(Request $request)
     {
         try {
             $friendId = $request->input('friend_id');
@@ -63,7 +71,7 @@ class FriendController extends Controller
                 throw new \Exception('Invalid request');
             }
 
-            // Check using the correct table name 'friendships'
+            // Check if already friends
             $existingFriendship = DB::table('friendships')
                 ->where('user_id', $user->id)
                 ->where('friend_id', $friendId)
@@ -73,17 +81,26 @@ class FriendController extends Controller
                 throw new \Exception('Already friends');
             }
 
-            // Insert into friendships table
-            DB::table('friendships')->insert([
-                'user_id' => $user->id,
-                'friend_id' => $friendId,
-                'created_at' => now(),
-                'updated_at' => now()
+            // Check for existing pending request
+            $existingRequest = FriendRequest::where('sender_id', $user->id)
+                ->where('receiver_id', $friendId)
+                ->where('status', 'pending')
+                ->exists();
+
+            if ($existingRequest) {
+                throw new \Exception('Friend request already sent');
+            }
+
+            // Create new friend request
+            FriendRequest::create([
+                'sender_id' => $user->id,
+                'receiver_id' => $friendId,
+                'status' => 'pending'
             ]);
 
             return response()->json([
                 'success' => true,
-                'message' => 'Friend added successfully'
+                'message' => 'Friend request sent successfully'
             ]);
         } catch (\Exception $e) {
             return response()->json([
@@ -93,259 +110,144 @@ class FriendController extends Controller
         }
     }
 
-    public function removeFriend($id)
+    public function getPendingRequests()
+    {
+        try {
+            $requests = FriendRequest::with('sender')
+                ->where('receiver_id', Auth::id())
+                ->where('status', 'pending')
+                ->get();
+
+            return response()->json([
+                'success' => true,
+                'data' => $requests
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Error loading friend requests'
+            ], 500);
+        }
+    }
+
+    public function acceptRequest($id)
     {
         try {
             DB::beginTransaction();
-            
-            $friend = User::findOrFail($id);
-            $user = Auth::user();
-            
-            // Remove friendship in both directions
-            DB::table('friendships')
-                ->where(function($query) use ($user, $id) {
-                    $query->where('user_id', $user->id)
-                          ->where('friend_id', $id);
-                })
-                ->orWhere(function($query) use ($user, $id) {
-                    $query->where('user_id', $id)
-                          ->where('friend_id', $user->id);
-                })
-                ->delete();
-            
+
+            $request = FriendRequest::where('id', $id)
+                ->where('receiver_id', Auth::id())
+                ->where('status', 'pending')
+                ->firstOrFail();
+
+            // Update request status
+            $request->status = 'accepted';
+            $request->save();
+
+            // Create friendship
+            DB::table('friendships')->insert([
+                'user_id' => $request->sender_id,
+                'friend_id' => $request->receiver_id,
+                'created_at' => now(),
+                'updated_at' => now()
+            ]);
+
+            // Create reverse friendship for bidirectional relationship
+            DB::table('friendships')->insert([
+                'user_id' => $request->receiver_id,
+                'friend_id' => $request->sender_id,
+                'created_at' => now(),
+                'updated_at' => now()
+            ]);
+
             DB::commit();
-            return back()->with('success', "{$friend->name} removed from friends.");
-            
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Friend request accepted'
+            ]);
         } catch (\Exception $e) {
             DB::rollBack();
-            return back()->with('error', 'Could not remove friend.');
+            return response()->json([
+                'success' => false,
+                'message' => 'Error accepting friend request'
+            ], 500);
+        }
+    }
+
+    public function rejectRequest($id)
+    {
+        try {
+            $request = FriendRequest::where('id', $id)
+                ->where('receiver_id', Auth::id())
+                ->where('status', 'pending')
+                ->firstOrFail();
+
+            $request->status = 'rejected';
+            $request->save();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Friend request rejected'
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Error rejecting friend request'
+            ], 500);
         }
     }
 
     public function getFriends()
     {
-        $userId = Auth::id();
-        
         try {
-            $friends = DB::table('friendships')
-                ->join('users', 'users.id', '=', 'friendships.friend_id')
-                ->where('friendships.user_id', $userId)
-                ->select('users.id', 'users.name', 'users.email', 'users.created_at')
-                ->orderBy('users.name', 'asc')
+            $friends = DB::table('users')
+                ->join('friendships', 'users.id', '=', 'friendships.friend_id')
+                ->where('friendships.user_id', Auth::id())
+                ->select('users.id', 'users.name', 'users.streak')
                 ->get();
 
             return response()->json([
-                'status' => 'success',
-                'data' => $friends,
-                'count' => $friends->count()
+                'success' => true,
+                'data' => $friends
             ]);
         } catch (\Exception $e) {
-            Log::error('Friend list error: ' . $e->getMessage());
             return response()->json([
-                'status' => 'error',
-                'message' => 'Could not load friends list'
+                'success' => false,
+                'message' => 'Error loading friends'
             ], 500);
         }
     }
 
-    public function updateWorkoutDays(Request $request)
-    {
-        try {
-            $userId = Auth::id();
-            $schedule = DB::table('workout_schedules')
-                ->where('user_id', $userId)
-                ->first();
-
-            if ($schedule && $schedule->is_locked) {
-                return response()->json([
-                    'error' => 'Schedule is locked for this week'
-                ], 403);
-            }
-
-            $days = $request->validate([
-                'monday' => 'required|boolean',
-                'tuesday' => 'required|boolean',
-                'wednesday' => 'required|boolean',
-                'thursday' => 'required|boolean',
-                'friday' => 'required|boolean',
-                'saturday' => 'required|boolean',
-                'sunday' => 'required|boolean',
-            ]);
-
-            DB::table('workout_schedules')
-                ->updateOrInsert(
-                    ['user_id' => $userId],
-                    array_merge($days, [
-                        'updated_at' => now()
-                    ])
-                );
-
-            return response()->json([
-                'message' => 'Workout days updated successfully'
-            ]);
-        } catch (\Exception $e) {
-            return response()->json([
-                'error' => 'Could not update workout days'
-            ], 500);
-        }
-    }
-
-    public function lockWorkoutSchedule()
-    {
-        try {
-            $userId = Auth::id();
-            $schedule = DB::table('workout_schedules')
-                ->where('user_id', $userId)
-                ->first();
-
-            if (!$schedule) {
-                return response()->json([
-                    'error' => 'No schedule found to lock'
-                ], 404);
-            }
-
-            DB::table('workout_schedules')
-                ->where('user_id', $userId)
-                ->update([
-                    'is_locked' => true,
-                    'locked_at' => now(),
-                    'updated_at' => now()
-                ]);
-
-            return response()->json([
-                'message' => 'Schedule locked successfully'
-            ]);
-        } catch (\Exception $e) {
-            return response()->json([
-                'error' => 'Could not lock schedule'
-            ], 500);
-        }
-    }
-
-    public function getWorkoutSchedule()
-    {
-        $userId = Auth::id();
-        $schedule = DB::table('workout_schedules')
-            ->where('user_id', $userId)
-            ->first();
-
-        return response()->json($schedule ?? [
-            'monday' => false,
-            'tuesday' => false,
-            'wednesday' => false,
-            'thursday' => false,
-            'friday' => false,
-            'saturday' => false,
-            'sunday' => false,
-            'is_locked' => false
-        ]);
-    }
-
-    public function sendRequest($id)
-    {
-        try {
-            $sender = Auth::id();
-            
-            // Check if request already exists
-            $existingRequest = DB::table('friend_requests')
-                ->where('sender_id', $sender)
-                ->where('receiver_id', $id)
-                ->where('status', 'pending')
-                ->first();
-
-            if ($existingRequest) {
-                return response()->json(['error' => 'Friend request already sent']);
-            }
-
-            // Check if they're already friends
-            $existingFriendship = DB::table('friendships')
-                ->where('user_id', $sender)
-                ->where('friend_id', $id)
-                ->first();
-
-            if ($existingFriendship) {
-                return response()->json(['error' => 'Already friends']);
-            }
-
-            DB::table('friend_requests')->insert([
-                'sender_id' => $sender,
-                'receiver_id' => $id,
-                'status' => 'pending',
-                'created_at' => now(),
-                'updated_at' => now()
-            ]);
-
-            return response()->json(['message' => 'Friend request sent successfully']);
-        } catch (\Exception $e) {
-            return response()->json(['error' => 'Could not send friend request'], 500);
-        }
-    }
-
-    public function getPendingRequests()
-    {
-        $userId = Auth::id();
-        
-        try {
-            $requests = DB::table('friend_requests')
-                ->join('users', 'users.id', '=', 'friend_requests.sender_id')
-                ->where('friend_requests.receiver_id', $userId)
-                ->where('friend_requests.status', 'pending')
-                ->select('users.id as user_id', 'users.name', 'friend_requests.id')
-                ->get();
-
-            return response()->json([
-                'status' => 'success',
-                'data' => $requests
-            ]);
-        } catch (\Exception $e) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Could not load requests'
-            ]);
-        }
-    }
-
-    public function handleRequest(Request $request, $id)
+    public function removeFriend($id)
     {
         try {
             DB::beginTransaction();
             
-            $friendRequest = DB::table('friend_requests')
-                ->where('sender_id', $id)
-                ->where('receiver_id', Auth::id())
-                ->where('status', 'pending')
-                ->first();
-
-            if (!$friendRequest) {
-                return response()->json(['error' => 'Friend request not found'], 404);
-            }
-
-            if ($request->action === 'accept') {
-                // Create friendships
-                DB::table('friendships')->insert([
-                    ['user_id' => Auth::id(), 'friend_id' => $id, 'created_at' => now()],
-                    ['user_id' => $id, 'friend_id' => Auth::id(), 'created_at' => now()]
-                ]);
-                
-                $status = 'accepted';
-            } else {
-                $status = 'declined';
-            }
-
-            // Update request status
-            DB::table('friend_requests')
-                ->where('id', $friendRequest->id)
-                ->update([
-                    'status' => $status,
-                    'updated_at' => now()
-                ]);
+            // Remove both directions of friendship
+            DB::table('friendships')
+                ->where(function($query) use ($id) {
+                    $query->where('user_id', Auth::id())
+                          ->where('friend_id', $id);
+                })
+                ->orWhere(function($query) use ($id) {
+                    $query->where('user_id', $id)
+                          ->where('friend_id', Auth::id());
+                })
+                ->delete();
 
             DB::commit();
-            return response()->json(['success' => true, 'action' => $status]);
-
+            
+            return response()->json([
+                'success' => true,
+                'message' => 'Friend removed successfully'
+            ]);
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json(['error' => 'Could not process friend request'], 500);
+            return response()->json([
+                'success' => false,
+                'message' => 'Error removing friend'
+            ], 500);
         }
     }
 }

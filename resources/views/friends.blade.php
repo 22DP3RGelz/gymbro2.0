@@ -75,8 +75,8 @@
 
 .search-input {
     width: calc(100% - 2rem);
-    margin: 0 1rem;
-    padding: 0.75rem 1rem 0.75rem 2.5rem;
+    margin: 2 2rem;
+    padding: 1rem 1rem 1rem 1rem;
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 0.75rem;
     font-size: 1rem;
@@ -357,9 +357,9 @@ function performSearch() {
 function sendFriendRequest(userId) {
     const button = event.target;
     button.disabled = true;
-    button.textContent = 'Sending...';
+    button.textContent = 'Sending Request...';
 
-    fetch('/friends/add', {
+    fetch('/friends/request', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -371,17 +371,95 @@ function sendFriendRequest(userId) {
     .then(response => response.json())
     .then(data => {
         if (data.success) {
-            button.parentElement.innerHTML = '<span class="status-text added">Added</span>';
-            loadFriends();
+            button.parentElement.innerHTML = '<span class="status-text pending">Request Sent</span>';
         } else {
-            throw new Error(data.message || 'Failed to add friend');
+            throw new Error(data.message || 'Failed to send friend request');
         }
     })
     .catch(error => {
         console.error('Error:', error);
         button.disabled = false;
         button.textContent = 'Add Friend';
-        alert(error.message || 'Failed to add friend');
+        alert(error.message || 'Failed to send friend request');
+    });
+}
+
+function loadPendingRequests() {
+    fetch('/friends/pending')
+        .then(response => response.json())
+        .then(result => {
+            const requestsDiv = document.getElementById('pendingRequests');
+            const requests = result.data || [];
+            
+            if (requests.length === 0) {
+                requestsDiv.innerHTML = `
+                    <div class="text-center py-4">
+                        <p class="text-gray-500">No pending friend requests</p>
+                    </div>`;
+                return;
+            }
+            
+            requestsDiv.innerHTML = requests.map(request => `
+                <div class="friend-item">
+                    <div class="friend-info">
+                        <span class="friend-name">${request.sender.name}</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button onclick="handleFriendRequest(${request.id}, 'accept')" class="accept-btn flex items-center">
+                            <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                            </svg>
+                            Accept
+                        </button>
+                        <button onclick="handleFriendRequest(${request.id}, 'reject')" class="decline-btn flex items-center">
+                            <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                            </svg>
+                            Decline
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+        })
+        .catch(error => {
+            console.error('Error loading friend requests:', error);
+            document.getElementById('pendingRequests').innerHTML = `
+                <div class="bg-red-50 border border-red-100 rounded-lg p-4">
+                    <div class="flex items-center text-red-800">
+                        <svg class="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/>
+                        </svg>
+                        Error loading friend requests
+                    </div>
+                </div>`;
+        });
+}
+
+function handleFriendRequest(requestId, action) {
+    const button = event.target;
+    button.disabled = true;
+    
+    fetch(`/friends/request/${requestId}/${action}`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            loadPendingRequests(); // Refresh the requests list
+            loadFriends(); // Refresh friends list if accepted
+        } else {
+            throw new Error(data.message || `Failed to ${action} friend request`);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        button.disabled = false;
+        alert(error.message || `Failed to ${action} friend request`);
     });
 }
 
@@ -406,14 +484,14 @@ function loadFriends() {
             
             friendsListDiv.innerHTML = friends.map(friend => `
                 <div class="friend-item">
-                    <div class="friend-info">
-                        <span class="friend-name">${friend.name}</span>
-                        ${friend.streak ? `
-                            <span class="friend-streak">
-                                <svg class="w-4 h-4 text-orange-500" fill="currentColor" viewBox="0 0 20 20">
+                    <div class="friend-info">                        <div class="flex items-center gap-2">
+                            <span class="friend-name">${friend.name}</span>
+                            ${friend.streak ? `
+                            <span class="inline-flex items-center bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 text-xs px-2 py-1 rounded-full">
+                                <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
                                     <path d="M12.395 2.553a1 1 0 00-1.45-.385c-.345.23-.614.558-.822.88-.214.33-.403.713-.57 1.116-.334.804-.614 1.768-.84 2.734a31.365 31.365 0 00-.613 3.58 2.64 2.64 0 01-.945-1.067c-.328-.68-.398-1.534-.398-2.654A1 1 0 005.05 6.05 6.981 6.981 0 003 11a7 7 0 1011.95-4.95c-.592-.591-.98-.985-1.348-1.467-.363-.476-.724-1.063-1.207-2.03zM12.12 15.12A3 3 0 017 13s.879.5 2.5.5c0-1 .5-4 1.25-4.5.5 1 .786 1.293 1.371 1.879A2.99 2.99 0 0113 13a2.99 2.99 0 01-.879 2.121z"/>
                                 </svg>
-                                ${friend.streak} day streak
+                                ${friend.streak}d
                             </span>` : ''}
                     </div>
                     <button onclick="removeFriend(${friend.id})" class="remove-friend-btn flex items-center">
@@ -471,6 +549,7 @@ function removeFriend(friendId) {
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', () => {
     loadFriends();
+    loadPendingRequests();
 });
 </script>
 

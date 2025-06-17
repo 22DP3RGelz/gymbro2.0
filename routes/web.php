@@ -32,9 +32,12 @@ Route::middleware('auth')->group(function () {
     Route::middleware(['auth'])->group(function () {
         Route::get('/friends', [FriendController::class, 'index'])->name('friends');
         Route::get('/friends/search', [FriendController::class, 'search'])->name('friends.search');
-        Route::post('/friends/add', [FriendController::class, 'addFriend'])->name('friends.add');
+        Route::post('/friends/request', [FriendController::class, 'sendRequest'])->name('friends.request');
+        Route::get('/friends/pending', [FriendController::class, 'getPendingRequests'])->name('friends.pending');
+        Route::post('/friends/request/{id}/accept', [FriendController::class, 'acceptRequest'])->name('friends.accept');
+        Route::post('/friends/request/{id}/reject', [FriendController::class, 'rejectRequest'])->name('friends.reject');
         Route::get('/get-friends', [FriendController::class, 'getFriends'])->name('friends.list');
-        Route::delete('/friends/{id}/remove', [UserController::class, 'removeFriend'])->name('friends.remove');
+        Route::delete('/friends/{id}/remove', [FriendController::class, 'removeFriend'])->name('friends.remove');
         Route::post('/lock-workout-schedule', [FriendController::class, 'lockWorkoutSchedule'])
         ->middleware('auth')->name('lock.schedule');
 
